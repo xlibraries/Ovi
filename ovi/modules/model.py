@@ -10,9 +10,8 @@ from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.models.modeling_utils import ModelMixin
 from .attention import flash_attention
 from torch.utils.checkpoint import checkpoint
-from wan.distributed_comms.communications import all_gather, all_to_all_4D
-from wan.distributed_comms.parallel_states import nccl_info, get_sequence_parallel_state
-__all__ = ['WanModel']
+from ovi.distributed_comms.communications import all_gather, all_to_all_4D
+from ovi.distributed_comms.parallel_states import nccl_info, get_sequence_parallel_state
 
 
 def gradient_checkpointing(module: nn.Module, *args, enabled: bool, **kwargs):

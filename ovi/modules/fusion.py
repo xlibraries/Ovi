@@ -1,10 +1,10 @@
 
 import torch
 import torch.nn as nn
-from wan.modules.model import WanLayerNorm, WanModel, WanRMSNorm, gradient_checkpointing, rope_apply
-from wan.modules.attention import flash_attention, attention_with_weights
-from wan.distributed_comms.communications import all_gather, all_to_all_4D
-from wan.distributed_comms.parallel_states import nccl_info, get_sequence_parallel_state
+from ovi.modules.model import WanLayerNorm, WanModel, WanRMSNorm, gradient_checkpointing, rope_apply
+from ovi.modules.attention import flash_attention, attention_with_weights
+from ovi.distributed_comms.communications import all_gather, all_to_all_4D
+from ovi.distributed_comms.parallel_states import nccl_info, get_sequence_parallel_state
 
 class FusionModel(nn.Module):
     def __init__(self, video_config=None, audio_config=None, audio_fusion_mode="trailing", gradient_checkpointing=False):

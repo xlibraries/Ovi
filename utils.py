@@ -70,7 +70,7 @@ def init_mmaudio_vae(config, rank=0):
     return vae
 
 
-def init_fusion_score_model_wan(config, rank: int = 0):
+def init_fusion_score_model_ovi(config, rank: int = 0):
     fusion_model = get_obj_from_str(config.model.target)
 
     assert config.model.get("video_config", False) and os.path.exists(
@@ -98,7 +98,7 @@ def init_fusion_score_model_wan(config, rank: int = 0):
     return fusion_model
 
 def init_text_model(config, rank):
-    from wan.modules.t5 import T5EncoderModel
+    from ovi.modules.t5 import T5EncoderModel
 
     models_path = config.text.models_path
     text_encoder_path = os.path.join(models_path, "models_t5_umt5-xxl-enc-bf16.pth")

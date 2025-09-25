@@ -24,16 +24,16 @@ from scipy.io import wavfile
 from torch.amp import autocast
 from safetensors.torch import load_file
 from tqdm import tqdm
-from wan.distributed_comms.util import get_device, get_world_size, get_local_rank, get_global_rank
-from wan.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
+from ovi.distributed_comms.util import get_device, get_world_size, get_local_rank, get_global_rank
+from ovi.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
 from diffusers import FlowMatchEulerDiscreteScheduler
-from wan.utils.fm_solvers import (FlowDPMSolverMultistepScheduler,
+from ovi.utils.fm_solvers import (FlowDPMSolverMultistepScheduler,
                                get_sampling_sigmas, retrieve_timesteps)
 from utils import (
-    init_fusion_score_model_wan, 
+    init_fusion_score_model_ovi, 
     init_text_model, init_vae
 )
-from wan.distributed_comms.parallel_states import initialize_sequence_parallel_state, get_sequence_parallel_state, nccl_info
+from ovi.distributed_comms.parallel_states import initialize_sequence_parallel_state, get_sequence_parallel_state, nccl_info
 
 global_rank = get_global_rank()
 
@@ -581,7 +581,7 @@ def main(config, args):
     sample_solver = config.inference.get("sample_solver", 'unipc')
     target_dtype = torch.bfloat16
 
-    score_model_fusion = init_fusion_score_model_wan(config, rank=local_rank)
+    score_model_fusion = init_fusion_score_model_ovi(config, rank=local_rank)
     score_model_fusion.to(dtype=target_dtype).to(device=device).eval()
     
     vae_model_video = init_vae(config.video, rank=device)
