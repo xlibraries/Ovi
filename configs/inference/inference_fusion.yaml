@@ -1,8 +1,8 @@
 model:
   target: wan.modules.fusion.FusionModel
-  video_config: configs/model/dit/wan_ti2v_2.2_5B.json
-  audio_config: configs/model/dit/wan_t2a_rope_scaled_2.2_5B.json
-  checkpoint_path: /data/weiminwang/ckpts/wan2.2/wan_t2av_combined_20500/mp_rank_00_model_states.pt
+  video_config: configs/model/dit/video.json
+  audio_config: configs/model/dit/audio.json
+  checkpoint_path: /data/weiminwang/ckpts/MovieMachines/mp_rank_00_model_states_25000.pt
 
 video:
   vae:
@@ -20,7 +20,8 @@ audio:
     need_vae_encoder: True
 
 text:
-  models_path: /gcs-fuse-checkpoint/multimodal/model_training/wan_text_clip_models.tar
+  models_path: /data/weiminwang/ckpts/MovieMachines/wan_text_clip_models
+  t5_on_cpu: False 
   text_model_ds_config:
     train_micro_batch_size_per_gpu: 1
     bf16:
@@ -30,26 +31,26 @@ text:
 
 inference:
   # csv_path: /data/calder/video_audio_inference_eval/extracted_data.csv
-  eval_dir_path: /data/weiminwang/eval_data/yubi_from_train/read_for_inference_combined #/data/chetwinlow/eval_data/mixed_5s_video_audio_eval_shards_720_720_processed/
-  local_output_root: /mnt/localdisk
+  local_output_root: ./output_videos_t5_shard_slg_25000_cfg_3_4
   video_only: False
-  resize_total_area: 518400 #518400 #589824
+  resize_total_area: 518400 # 720x720
   audio_latent_length: 157
   audio_latent_channel: 20
   video_latent_channel: 48 
+  video_latent_height: 62 # only useful if t2v_only
+  video_latent_width: 32
   video_latent_length: 31
   save_fps: 24
   num_steps: 50
   sample_solver: unipc
   shift: 5.0
-  cfg_scale_audio: 4.0
-  cfg_scale_video: 5.0
+  cfg_scale_audio: 3.0
+  cfg_scale_video: 4.0
   negative_prompt: ""
   seed: 100
-  prediction_type: v_prediction
-
-  use_combined_prompt: True 
 
   csv_path: /home/weiminwang/audio/veo3/multimodal-generation/combined_meta_new.csv
 
   t2v_only: False
+
+  slg_layers: True 

@@ -1,7 +1,7 @@
 
 import torch
 import torch.nn as nn
-from wan.modules.model_add_mod_wan_2_2 import WanLayerNorm, WanModel, WanRMSNorm, gradient_checkpointing, rope_apply
+from wan.modules.model import WanLayerNorm, WanModel, WanRMSNorm, gradient_checkpointing, rope_apply
 from wan.modules.attention import flash_attention, attention_with_weights
 from wan.distributed_comms.communications import all_gather, all_to_all_4D
 from wan.distributed_comms.parallel_states import nccl_info, get_sequence_parallel_state
@@ -182,17 +182,9 @@ class FusionModel(nn.Module):
         
         x = x + target_x
         if self.use_sp:
-            # print(f"[DEBUG SP] Doing all to all to shard head")
             x = all_to_all_4D(x, scatter_dim=1, gather_dim=2) # [B, L/P, H, C/H]
         
         x = x.flatten(2) # [B, L/P, C]
-
-        # print(f"after projs ({is_vid=}? {src_seq.min().item()=} {src_seq.max().item()=}, {src_seq.mean().item()=}, {src_seq.std().item()=}, {target_seq.min().item()=} {target_seq.max().item()=}, {target_seq.mean().item()=}, {target_seq.std().item()=}, {target_x.min().item()=} {target_x.max().item()=}, {target_x.mean().item()=}, {target_x.std().item()=}, {x.min().item()=} {x.max().item()=}, {x.mean().item()=}, {x.std().item()=}")
-
-
-        
-
-
 
         x = cross_attn_block.o(x)
         return x
@@ -334,8 +326,6 @@ class FusionModel(nn.Module):
         cal_attention_weights_a2v=True,
         slg_layers=False
     ):  
-        # print all shapes
-        # print(f"vid: {[x.shape for x in vid]}, audio: {[x.shape for x in audio]}, y: {[x.shape for x in y]}, t: {t.shape}")
 
         assert clip_fea is None 
         assert y is None

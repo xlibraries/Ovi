@@ -10,8 +10,8 @@ from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.models.modeling_utils import ModelMixin
 from .attention import flash_attention
 from torch.utils.checkpoint import checkpoint
-from distributed_comms.communications import all_gather, all_to_all_4D
-from distributed_comms.parallel_states import nccl_info, get_sequence_parallel_state
+from wan.distributed_comms.communications import all_gather, all_to_all_4D
+from wan.distributed_comms.parallel_states import nccl_info, get_sequence_parallel_state
 __all__ = ['WanModel']
 
 
@@ -731,13 +731,6 @@ class WanModel(ModelMixin, ConfigMixin):
             torch.cat([u, u.new_zeros(1, seq_len - u.size(1), u.size(2))],
                       dim=1) for u in x
         ]) # single [B, L, C]
-
-        # # time embeddings
-        # with torch.amp.autocast('cuda', dtype=torch.bfloat16):
-        #     e = self.time_embedding(
-        #         sinusoidal_embedding_1d(self.freq_dim, t).bfloat16())
-        #     e0 = self.time_projection(e).unflatten(1, (6, self.dim))
-        #     assert e.dtype == torch.bfloat16 and e0.dtype == torch.bfloat16
 
         # time embeddings
         if t.dim() == 1:

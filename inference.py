@@ -24,8 +24,7 @@ from scipy.io import wavfile
 from torch.amp import autocast
 from safetensors.torch import load_file
 from tqdm import tqdm
-from wan.distributed.distributed import get_device, get_world_size, get_local_rank, get_global_rank
-
+from wan.distributed_comms.util import get_device, get_world_size, get_local_rank, get_global_rank
 from wan.utils.fm_solvers_unipc import FlowUniPCMultistepScheduler
 from diffusers import FlowMatchEulerDiscreteScheduler
 from wan.utils.fm_solvers import (FlowDPMSolverMultistepScheduler,
@@ -302,10 +301,10 @@ def get_scheduler_time_steps(sampling_steps, sample_solver='unipc', device=0, co
     return sample_scheduler, timesteps 
 
 @torch.inference_mode()
-def inference(config, score_model, vae_model_video, vae_model_audio, text_model, device, sample_solver='unipc', local_rank=0, global_rank=0, world_size=1, root_write_dir=None, target_dtype=torch.float32, video_only=False):
+def inference(config, score_model, vae_model_video, vae_model_audio, text_model, device, sample_solver='unipc', local_rank=0, global_rank=0, world_size=1, root_write_dir=None, target_dtype=torch.float32):
         
     score_model.eval()
-    seed_g = 100
+    seed_g = config.inference.get("seed", 100)
 
     cfg_scale_audio = config.inference.get("cfg_scale_audio", 1.0)
     cfg_scale_video = config.inference.get("cfg_scale_video", 1.0)
@@ -367,14 +366,8 @@ def inference(config, score_model, vae_model_video, vae_model_audio, text_model,
     
     # Create local directory for temporary storage
     if is_io_rank:
-
         os.makedirs(root_write_dir, exist_ok=True)
     
-        # Lists to store paths for evaluation
-        generated_audio_paths = []
-        generated_video_paths = []
-        generated_combined_paths = []  # video+audio MP4 files
-
     # Timing statistics
     sample_times = []
     with torch.no_grad():
@@ -401,15 +394,16 @@ def inference(config, score_model, vae_model_video, vae_model_audio, text_model,
                 # CSV mode: create data from CSV row
                 csv_row = data_entry
                 
-                # Load first frame from path
-                first_frame = cv2.imread(csv_row['first_frame'])
-                first_frame = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
-                
-                # Create dummy video by repeating first frame (shape: c, f, h, w)
-                num_frames = 121  # Default frame count
-                original_video = np.stack([first_frame.transpose(2, 0, 1)] * num_frames, axis=1)
-                original_video = original_video.astype(np.float32) / 255.0  # Normalize to [0,1]
-                
+                if not t2v_only:
+                    # Load first frame from path
+                    first_frame = cv2.imread(csv_row['first_frame'])
+                    first_frame = cv2.cvtColor(first_frame, cv2.COLOR_BGR2RGB)
+                    
+                    # Create dummy video by repeating first frame (shape: c, f, h, w)
+                    num_frames = 121  # Default frame count
+                    original_video = np.stack([first_frame.transpose(2, 0, 1)] * num_frames, axis=1)
+                    original_video = original_video.astype(np.float32) / 255.0  # Normalize to [0,1]
+                    
                 # Create silent audio
                 sample_rate = 16000
                 
@@ -420,17 +414,18 @@ def inference(config, score_model, vae_model_video, vae_model_audio, text_model,
                 with autocast('cuda', enabled=target_dtype != torch.float32, dtype=target_dtype):
                     # Preprocess audio and video using helper functions
                     print(f"[DEBUG - GLOBAL RANK {global_rank}] About to preprocess audio and video tensors")
-                    original_video_tensor = preprocess_video_tensor(original_video, device, target_dtype, h_w_multiple_of=32, resize_total_area=config.inference.get("resize_total_area", None))
-                    print(f"[DEBUG - GLOBAL RANK {global_rank}] Preprocessed audio and video tensors - video shape: {original_video_tensor.shape}")
-                    
+                    if not t2v_only:
+                        original_video_tensor = preprocess_video_tensor(original_video, device, target_dtype, h_w_multiple_of=32, resize_total_area=config.inference.get("resize_total_area", None))
+                        print(f"[DEBUG - GLOBAL RANK {global_rank}] Preprocessed audio and video tensors - video shape: {original_video_tensor.shape}")
                     
                     print(f"[DEBUG - GLOBAL RANK {global_rank}] About to try to get clip and clap embeds")
                     # Get text embeddings for both conditional and unconditional (CFG) with visual conditioning
                     negative_prompt = config.inference.get("negative_prompt", "")
                     text_embeddings = text_model(
                         [text_audio, negative_prompt], 
+                        text_model.device
                     )
-                    text_embeddings = [emb.to(target_dtype) for emb in text_embeddings]
+                    text_embeddings = [emb.to(target_dtype).to(device) for emb in text_embeddings]
 
                     # Split embeddings
                     text_embeddings_audio_pos = text_embeddings[0]
@@ -438,13 +433,15 @@ def inference(config, score_model, vae_model_video, vae_model_audio, text_model,
 
                     text_embeddings_audio_neg = text_embeddings[1]
                     text_embeddings_video_neg = text_embeddings[1]
-                                                         
-                    with torch.no_grad():
-                        latents_images = vae_model_video.wrapped_encode(original_video_tensor[:,:,:1]).bfloat16().squeeze(0) # c 1 h w 
 
-                    latents_images = latents_images.to(target_dtype)
+                    if not t2v_only:              
+                        with torch.no_grad():
+                            latents_images = vae_model_video.wrapped_encode(original_video_tensor[:,:,:1]).bfloat16().squeeze(0) # c 1 h w 
+                        latents_images = latents_images.to(target_dtype)
+                        video_latent_h, video_latent_w = latents_images.shape[2], latents_images.shape[3]
+                    else:
+                        video_latent_h, video_latent_w = config.inference.get("video_latent_height", 32), config.inference.get("video_latent_width", 62)
 
-                    video_latent_h, video_latent_w = latents_images.shape[2], latents_images.shape[3]
                     video_noise = torch.randn((1, config.inference.video_latent_channel, config.inference.video_latent_length, video_latent_h, video_latent_w), device=device, dtype=target_dtype, generator=torch.Generator(device=device).manual_seed(seed_g)).squeeze(0)  # c, f, h, w
                     audio_noise = torch.randn((1, config.inference.audio_latent_length, config.inference.audio_latent_channel), device=device, dtype=target_dtype, generator=torch.Generator(device=device).manual_seed(seed_g)).squeeze(0)  # 1, l c -> l, c
                     
@@ -454,9 +451,7 @@ def inference(config, score_model, vae_model_video, vae_model_audio, text_model,
                     max_seq_len_video = video_noise.shape[1] * video_noise.shape[2] * video_noise.shape[3] // (_patch_size_h*_patch_size_w) # f * h * w from [1, c, f, h, w]
                     
                     # Sampling loop
-                    step_times = []
                     for i, (t_v, t_a) in enumerate(zip(timesteps_video, timesteps_audio)):
-                        step_start_time = time.time()
                         # print(f"[DEBUG - GLOBAL RANK {global_rank}] Starting sampling at {i} iteration")
                         timestep_input = torch.full((1,), t_v, device=device)
                         #timestep_input_a = torch.full((1,), t_a, device=device)
@@ -486,7 +481,8 @@ def inference(config, score_model, vae_model_video, vae_model_audio, text_model,
                             'vid_context': [text_embeddings_video_neg],
                             'vid_seq_len': max_seq_len_video,
                             'audio_seq_len': max_seq_len_audio,
-                            'first_frame_is_clean': True if not t2v_only else False
+                            'first_frame_is_clean': True if not t2v_only else False,
+                            'slg_layers': config.inference.get('slg_layers', False)
                         }
                         
                         pred_vid_neg, pred_audio_neg = score_model(
@@ -514,12 +510,12 @@ def inference(config, score_model, vae_model_video, vae_model_audio, text_model,
                     print(f"[DEBUG - GLOBAL RANK {global_rank}] Decoding final latents")
                     audio_latents_for_vae = audio_noise.unsqueeze(0).transpose(1, 2)  # 1, c, l
                     generated_audio = vae_model_audio.wrapped_decode(audio_latents_for_vae)
-                    generated_audio = generated_audio.squeeze().cpu().numpy()
+                    generated_audio = generated_audio.squeeze().cpu().float().numpy()
                     
                     # Decode video  
                     video_latents_for_vae = video_noise.unsqueeze(0)  # 1, c, f, h, w
                     generated_video = vae_model_video.wrapped_decode(video_latents_for_vae)
-                    generated_video = generated_video.squeeze(0).cpu().numpy()  # c, f, h, w
+                    generated_video = generated_video.squeeze(0).cpu().float().numpy()  # c, f, h, w
 
                 # Only I/O rank saves generated files
                 if is_io_rank:
@@ -528,12 +524,10 @@ def inference(config, score_model, vae_model_video, vae_model_audio, text_model,
                     sample_rate = 16000  # Define sample_rate here for CSV mode
                     generated_audio_path = os.path.join(root_write_dir, f"{name_id}_gen.wav")
                     wavfile.write(generated_audio_path, sample_rate, (generated_audio * 32767).astype(np.int16))
-                    generated_audio_paths.append(generated_audio_path)
                     
                     # Save generated video
                     generated_video_path = os.path.join(root_write_dir, f"{name_id}_gen.mp4")
                     _save_video_frames_as_mp4(generated_video.transpose(1, 2, 3, 0), generated_video_path, fps=config.inference.get("save_fps", 24))  # f, h, w, c
-                    generated_video_paths.append(generated_video_path)
                     
                     # Combine video and audio into final MP4
                     if t2v_only:
@@ -541,7 +535,6 @@ def inference(config, score_model, vae_model_video, vae_model_audio, text_model,
                     else:
                         combined_path = os.path.join(root_write_dir, f"{name_id}_combined.mp4")
                     _combine_video_audio_to_mp4(generated_video_path, generated_audio_path, combined_path)
-                    generated_combined_paths.append(combined_path)
             
                 # Calculate total sample time
                 total_sample_time = time.time() - sample_start_time
@@ -578,23 +571,14 @@ def main(config, args):
     world_size = get_world_size()
     global_rank = get_global_rank()
     local_rank = get_local_rank()
-    root_write_dir = config.local_output_root
+    root_write_dir = config.inference.local_output_root
     
     torch.cuda.set_device(device) 
 
     args.local_rank = local_rank
     args.device = device
     
-    eval_dir = config.inference.get("eval_dir_path", None)
     sample_solver = config.inference.get("sample_solver", 'unipc')
-    
-    start_pkl = time.time()
-    print(f"Rank {local_rank} starting to load eval data from {eval_dir}...")
-   
-    torch.distributed.barrier()
-    end_pkl = time.time()
-    print(f"Rank {local_rank} finished loading eval data with barrier in {end_pkl - start_pkl:.2f} seconds")
-
     target_dtype = torch.bfloat16
 
     score_model_fusion = init_fusion_score_model_wan(config, rank=local_rank)
@@ -608,8 +592,18 @@ def main(config, args):
     vae_model_audio.requires_grad_(False).eval()
     vae_model_audio = vae_model_audio.bfloat16()
     
-    text_model = init_text_model(config, rank=torch.device('cpu'))
-
+    if config.text.get("t5_on_cpu", False):
+        text_model = init_text_model(config, rank=torch.device('cpu'))
+    elif config.text.get("text_model_ds_config", None) is not None:
+        text_model_ds_config = dict(config.text.get("text_model_ds_config"))
+        print(f"using sharded text model with {text_model_ds_config}...")
+        text_model = init_text_model(config, rank=device)
+        text_model.model, _, _, _ = deepspeed.initialize(
+                                    args=args,model=text_model.model, 
+                                    config=text_model_ds_config)
+    else:
+        text_model = init_text_model(config, rank=device)
+    
     if hasattr(config.model, 'checkpoint_path') and config.model.checkpoint_path:
     
         checkpoint_path = config.model.checkpoint_path
@@ -625,41 +619,20 @@ def main(config, args):
         else: 
             raise RuntimeError("We only support .safetensors and .pt checkpoints")
 
-        if config.inference.get("video_only", False):
-            merged_state_dict = {}
-            for k, v in df.items():
-                if "head.modulation" not in k and "modulation" in k:
-                    k = k.replace("modulation", "modulation.modulation")
-                
-                merged_state_dict[k] = v
-            missing, unexpected = score_model_fusion.video_model.load_state_dict(merged_state_dict, strict=False)
+        missing, unexpected = score_model_fusion.load_state_dict(df, strict=False)
 
-            print(
-                f"Loaded ckpt for `video fusion score model` on rank 0 from"
-                f"{checkpoint_path}. Total missing: {missing}, "
-                f"unexpected: {unexpected}"
-            )
-        else:
-            missing, unexpected = score_model_fusion.load_state_dict(df, strict=False)
-
-            print(
-                f"Loaded ckpt for `entire fusion score model` on rank 0 from"
-                f"{checkpoint_path}. Total missing: {missing}, "
-                f"unexpected: {unexpected}"
-            )
+        print(
+            f"Loaded ckpt for `entire fusion score model` on rank 0 from"
+            f"{checkpoint_path}. Total missing: {missing}, "
+            f"unexpected: {unexpected}"
+        )
 
         del df 
         gc.collect()
     else: 
-        raise RuntimeError("No valid checkpoint path found in config. Please specify either 'checkpoint_path' or both 'video_checkpoint_path' and 'audio_checkpoint_path'.")
+        raise RuntimeError("No valid checkpoint path found in config. Please specify either 'checkpoint_path'")
     
-    if config.model.get("fusion_model_ds_config", None) is not None: 
-        fusion_model_ds_config = dict(config.model.get("fusion_model_ds_config"))
-        print(f"using sharded fusion model with {fusion_model_ds_config}")
-        score_model_fusion, _, _, _ = deepspeed.initialize(
-            args=args,model=score_model_fusion,config=fusion_model_ds_config
-        )
-    
+
     inference(
         config=config,
         score_model=score_model_fusion,
@@ -672,8 +645,7 @@ def main(config, args):
         global_rank=global_rank,
         world_size=world_size,
         root_write_dir=root_write_dir,
-        target_dtype=target_dtype, 
-        video_only=config.inference.get("video_only", False)
+        target_dtype=target_dtype
     )
 
 if __name__ == "__main__":
