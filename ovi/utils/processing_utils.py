@@ -158,3 +158,12 @@ def validate_and_process_user_prompt(text_prompt: str, image_path: str = None) -
         image_paths = [image_path]
 
     return text_prompts, image_paths
+
+
+def format_prompt_for_filename(text: str) -> str:
+    # remove anything inside <...>
+    no_tags = re.sub(r"<.*?>", "", text)
+    # replace spaces and slashes with underscores
+    safe = no_tags.replace(" ", "_").replace("/", "_")
+    # truncate to 50 chars
+    return safe[:50]

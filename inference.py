@@ -5,7 +5,7 @@ import torch
 from tqdm import tqdm
 from omegaconf import OmegaConf
 from ovi.utils.io_utils import save_video
-from ovi.utils.processing_utils import validate_and_process_user_prompt
+from ovi.utils.processing_utils import format_prompt_for_filename, validate_and_process_user_prompt
 from ovi.utils.utils import get_arguments
 from ovi.distributed_comms.util import get_world_size, get_local_rank, get_global_rank
 from ovi.distributed_comms.parallel_states import initialize_sequence_parallel_state, get_sequence_parallel_state, nccl_info
@@ -49,7 +49,7 @@ def main(config, args):
 
 
     initialize_sequence_parallel_state(sp_size)
-    logging.info(f"Using SP: {get_sequence_parallel_state()}")
+    logging.info(f"Using SP: {get_sequence_parallel_state()}, SP_SIZE: {sp_size}")
     
     args.local_rank = local_rank
     args.device = device
@@ -86,11 +86,13 @@ def main(config, args):
     use_sp = get_sequence_parallel_state()
     if use_sp:
         sp_size = nccl_info.sp_size
+        sp_rank = nccl_info.rank_within_group
         sp_group_id = global_rank // sp_size
         num_sp_groups = world_size // sp_size
     else:
         # No SP: treat each GPU as its own group
         sp_size = 1
+        sp_rank = 0
         sp_group_id = global_rank
         num_sp_groups = world_size
 
@@ -116,21 +118,33 @@ def main(config, args):
         this_rank_eval_data = all_eval_data[start_idx:end_idx]
 
     for idx, (text_prompt, image_path) in tqdm(enumerate(this_rank_eval_data)):
-        output_path = os.path.join(output_dir, f"{idx + start_idx}_generated.mp4")
+        aspect_ratio = config.inference.get("aspect_ratio", "9:16")
+        seed = config.inference.get("seed", 100)
+        solver_name = config.inference.get("solver_name", "unipc")
+        sample_steps = config.inference.get("sample_steps", 50)
+        shift = config.inference.get("shift", 5.0)
+        video_guidance_scale = config.inference.get("video_guidance_scale", 5.0)
+        audio_guidance_scale = config.inference.get("audio_guidance_scale", 4.0)
+        slg_layer = config.inference.get("slg_layer", 9)
+        video_negative_prompt = config.inference.get("video_negative_prompt", "")
+        audio_negative_prompt = config.inference.get("audio_negative_prompt", "")
         generated_video, generated_audio = ovi_engine.generate(text_prompt=text_prompt,
                                                                 image_path=image_path,
-                                                                aspect_ratio=config.inference.get("aspect_ratio", "9:16"),
-                                                                seed=config.inference.get("seed", 100),
-                                                                solver_name=config.inference.get("solver_name", "unipc"),
-                                                                sample_steps=config.inference.get("sample_steps", 50),
-                                                                shift=config.inference.get("shift", 5.0),
-                                                                video_guidance_scale=config.inference.get("video_guidance_scale", 5.0),
-                                                                audio_guidance_scale=config.inference.get("audio_guidance_scale", 4.0),
-                                                                slg_layer=config.inference.get("slg_layer", 9),
-                                                                video_negative_prompt=config.inference.get("video_negative_prompt", ""),
-                                                                audio_negative_prompt=config.inference.get("audio_negative_prompt", ""))
+                                                                aspect_ratio=aspect_ratio,
+                                                                seed=seed,
+                                                                solver_name=solver_name,
+                                                                sample_steps=sample_steps,
+                                                                shift=shift,
+                                                                video_guidance_scale=video_guidance_scale,
+                                                                audio_guidance_scale=audio_guidance_scale,
+                                                                slg_layer=slg_layer,
+                                                                video_negative_prompt=video_negative_prompt,
+                                                                audio_negative_prompt=audio_negative_prompt)
         
-        save_video(output_path, generated_video, generated_audio, fps=24, sample_rate=16000)
+        if sp_rank == 0:
+            formatted_prompt = format_prompt_for_filename(text_prompt)
+            output_path = os.path.join(output_dir, f"{formatted_prompt}_{aspect_ratio.replace(':', 'x')}_{seed}.mp4")
+            save_video(output_path, generated_video, generated_audio, fps=24, sample_rate=16000)
     
 
 
