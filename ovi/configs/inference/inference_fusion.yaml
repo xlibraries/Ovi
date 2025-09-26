@@ -1,0 +1,48 @@
+model:
+  target: ovi.modules.fusion.FusionModel
+  video_config: configs/model/dit/video.json
+  audio_config: configs/model/dit/audio.json
+  checkpoint_path: /data/weiminwang/ckpts/MovieMachines/mp_rank_00_model_states_25000.pt
+
+video:
+  vae:
+    target: ovi.modules.vae2_2.Wan2_2_VAE
+    path: /data/weiminwang/ckpts/wan2.2/Wan2.2-TI2V-5B/Wan2.2_VAE.pth
+    latent_channels: 48
+    temp_down_factor: 4
+
+audio:
+  vae:
+    target: ovi.modules.mmaudio.features_utils.FeaturesUtils
+    tod_vae_ckpt: /data/weiminwang/ckpts/mm_audio_ckpts/v1-16.pth
+    bigvgan_vocoder_ckpt: /data/weiminwang/ckpts/mm_audio_ckpts/best_netG.pt
+    mode: 16k
+    need_vae_encoder: True
+
+text:
+  models_path: /data/weiminwang/ckpts/MovieMachines/wan_text_clip_models
+  t5_on_cpu: False 
+  text_model_ds_config:
+    train_micro_batch_size_per_gpu: 1
+    bf16:
+      enabled: true
+    zero_optimization:
+      stage: 3
+
+inference:
+  output_dir: ./engine_out
+  num_steps: 50
+  solver_name: unipc
+  shift: 5.0
+  audio_guidance_scale: 3.0
+  video_guidance_scale: 4.0
+  shard_text_model: False
+  shard_fusion_model: False
+  # video_negative_prompt: "excessive head movement, unnatural motion, jitter, shaky camera, unstable video, deformed hands, extra fingers, fused fingers, missing fingers, six fingers, mutated hands, malformed hands, distorted hands, unnatural hand pose, bad anatomy, text captions, closed captions, low quality, blurry, pixelated, artifacts, distorted, noisy, poor resolution"
+  # audio_negative_prompt: "robotic, muffled, distorted, metallic, background noise, echo, clipping, low-quality microphone, mouth clicks"
+  seed: 100
+  aspect_ratio: "9:16" #["9:16", "16:9", "1:1"]
+  text_prompt: "A red-haired woman with fair skin, wearing a maroon cardigan over a tan top, smiles and looks towards someone off-screen to her left. She sits at a dark wooden table covered with numerous colorful puzzle pieces, and her hands are sorting through them. In the blurry foreground to the left, the back of a person's head and shoulder are visible. The background features light-colored louvered shutters. The woman continues to smile as she asks, <S>Was that Scott, your manager?<E> An unseen man responds, <S>Yeah.<E> As the woman maintains her smile, continuing to sort puzzle pieces, the man adds, <S>He just hired Mrs. Appletree to be his new secre-<E> The woman glances down at the puzzle pieces briefly before looking back up with a slight widening of her smile.. <AUDCAP>Soft chatter, clinking sounds of puzzle pieces, distinct male voice, distinct female voice.<ENDAUDCAP>"
+  # text_prompt: /home/chetwinlow/Ovi/converted_prompts.tsv
+  t2v_only: True
+  slg_layer: 9

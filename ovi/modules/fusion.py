@@ -49,31 +49,10 @@ class FusionModel(nn.Module):
 
         self.set_gradient_checkpointing(enable=gradient_checkpointing)
 
-        # For attention visualization
-        self.attention_weights = []
-        self.collect_attention_weights = False
-
         self.init_weights()
 
     def set_gradient_checkpointing(self, enable: bool):
         self.gradient_checkpointing = enable
-
-    def enable_attention_collection(self):
-        """Enable collection of attention weights for visualization."""
-        self.collect_attention_weights = True
-        self.attention_weights = []
-
-    def disable_attention_collection(self):
-        """Disable collection of attention weights."""
-        self.collect_attention_weights = False
-    
-    def get_attention_weights(self):
-        """Get collected attention weights."""
-        return self.attention_weights
-    
-    def clear_attention_weights(self):
-        """Clear collected attention weights."""
-        self.attention_weights = []
         
     def inject_cross_attention_kv_projections(self):
         for vid_block in self.video_model.blocks:
@@ -324,7 +303,7 @@ class FusionModel(nn.Module):
         first_frame_is_clean=False,
         cal_attention_weights=False,
         cal_attention_weights_a2v=True,
-        slg_layers=False
+        slg_layer=False
     ):  
 
         assert clip_fea is None 
@@ -361,8 +340,7 @@ class FusionModel(nn.Module):
             """
             vid_blocks = self.video_model.blocks[i * self.v_2_a_ratio : (i + 1) * self.v_2_a_ratio]
             audio_block = self.audio_model.blocks[i]
-            if slg_layers and i == 9:
-                print(f"WARNING SKipping layer: {i}")
+            if slg_layer > 0 and i == slg_layer:
                 continue
             vid, audio = gradient_checkpointing(
                     enabled=(self.training and self.gradient_checkpointing),

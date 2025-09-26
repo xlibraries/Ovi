@@ -7,8 +7,38 @@ import os.path as osp
 import imageio
 import torch
 import torchvision
+from sys import argv
 
 __all__ = ['cache_video', 'cache_image', 'str2bool']
+
+
+import deepspeed
+
+
+def get_arguments(args=argv[1:]):
+    parser = get_argument_parser()
+    # Include DeepSpeed configuration arguments
+    parser = deepspeed.add_config_arguments(parser)
+
+    args = parser.parse_args(args)
+
+    # no cuda mode is not supported
+    args.no_cuda = False
+
+    return args
+
+
+def get_argument_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config-file",
+                        type=str,
+                        required=True)
+    parser.add_argument("--local_rank",
+                        type=int,
+                        default=-1,
+                        help="local_rank for distributed training on gpus")
+    
+    return parser
 
 
 def rand_name(length=8, suffix=''):
