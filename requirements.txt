@@ -21,3 +21,4 @@ omegaconf
 open-clip-torch
 librosa
 pandas
+gradio

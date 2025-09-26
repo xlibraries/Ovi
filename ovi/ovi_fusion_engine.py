@@ -15,11 +15,13 @@ from diffusers import FlowMatchEulerDiscreteScheduler
 from ovi.utils.fm_solvers import (FlowDPMSolverMultistepScheduler,
                                get_sampling_sigmas, retrieve_timesteps)
 import traceback
-
+from omegaconf import OmegaConf
 from ovi.utils.processing_utils import calc_dims_from_area, preprocess_image_tensor
 
+DEFAULT_CONFIG = OmegaConf.load('ovi/configs/inference/default_fusion.yaml')
+
 class OviFusionEngine:
-    def __init__(self, config, device, target_dtype=torch.bfloat16):
+    def __init__(self, config=DEFAULT_CONFIG, device=0, target_dtype=torch.bfloat16):
         # Load fusion model
         self.device = device
         self.target_dtype = target_dtype
