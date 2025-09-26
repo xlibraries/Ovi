@@ -20,3 +20,4 @@ moviepy==1.0.3
 omegaconf
 open-clip-torch
 librosa
+pandas
