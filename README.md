@@ -24,28 +24,43 @@ pip install -r requirements.txt
 ```
 
 ## Download Weights
-...
+We use open-sourced checkpoints from Wan and MMAudio, and thus we will need to download them from huggingface
+```
+# optional can specific --output-dir to download to a specific directory, but if a custom directory is used, the inference yaml has to be updated with the custom directory as shown below
+python3 download_weights.py
+
+OR
+
+python3 download_weights.py --output-dir custom_dir
+```
 
 ## Run Examples
 Inference parameters are controlled via a yaml file, for example `ovi/configs/inference/inference_fusion.yaml`
 ```
-inference:
-  output_dir: ./engine_out
-  num_steps: 50
-  solver_name: unipc
-  shift: 5.0
-  audio_guidance_scale: 3.0
-  video_guidance_scale: 4.0
-  shard_text_model: False
-  shard_fusion_model: False
-  video_negative_prompt: "excessive head movement, unnatural motion, jitter, shaky camera, unstable video, deformed hands, extra fingers, fused fingers, missing fingers, six fingers, mutated hands, malformed hands, distorted hands, unnatural hand pose, bad anatomy, text captions, closed captions, low quality, blurry, pixelated, artifacts, distorted, noisy, poor resolution"
-  audio_negative_prompt: "robotic, muffled, distorted, metallic, background noise, echo, clipping, low-quality microphone, mouth clicks"
-  seed: 100
-  aspect_ratio: "9:16" #["9:16", "16:9", "1:1"]
-  text_prompt: "A red-haired woman with fair skin, wearing a maroon cardigan over a tan top, smiles and looks towards someone off-screen to her left. She sits at a dark wooden table covered with numerous colorful puzzle pieces, and her hands are sorting through them. In the blurry foreground to the left, the back of a person's head and shoulder are visible. The background features light-colored louvered shutters. The woman continues to smile as she asks, <S>Was that Scott, your manager?<E> An unseen man responds, <S>Yeah.<E> As the woman maintains her smile, continuing to sort puzzle pieces, the man adds, <S>He just hired Mrs. Appletree to be his new secre-<E> The woman glances down at the puzzle pieces briefly before looking back up with a slight widening of her smile.. <AUDCAP>Soft chatter, clinking sounds of puzzle pieces, distinct male voice, distinct female voice.<ENDAUDCAP>"
-  # text_prompt: /home/chetwinlow/Ovi/converted_prompts.tsv
-  t2v_only: True
-  slg_layer: 9
+output_dir: "<path to save generated outputs>"  # default: ./outputs
+ckpt_dir: "<path to model checkpoints>"                # default: ./ckpts
+
+num_steps: "<number of sampling steps>"                # default: 50
+solver_name: "<sampler/solver algorithm>"              # default: unipc
+shift: "<temporal shift factor>"                       # default: 5.0
+sp_size: "<spatial size multiplier>"                   # default: 1
+
+audio_guidance_scale: "<strength of audio conditioning>"  # default: 3.0
+video_guidance_scale: "<strength of video conditioning>"  # default: 4.0
+
+shard_text_model: "<whether to shard text model across devices>"    # default: False
+shard_fusion_model: "<whether to shard fusion model across devices>" # default: False
+
+video_negative_prompt: "<undesired artifacts to avoid in video>"    # default: common artifacts (jitter, bad hands, blur, etc.)
+audio_negative_prompt: "<undesired artifacts to avoid in audio>"    # default: common artifacts (robotic, muffled, echo, etc.)
+
+seed: "<random seed for reproducibility>"             # default: 100
+aspect_ratio: "<video aspect ratio>"                  # default: 9:16  (choices: [9:16, 16:9, 1:1])
+
+text_prompt: "<either raw text prompt or path to TSV/JSON with prompts>"  
+# default: "A short description of the scene..." or /path/to/prompts.tsv
+t2v_only: "<generate only text-to-video (ignore audio)>"             # default: True
+slg_layer: "<which layer to apply SLG guidance>"                     # default: 9
 ```
 fill in description of each parameter...
 
