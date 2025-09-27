@@ -32,7 +32,7 @@ def main(config, args):
     local_rank = get_local_rank()
     device = local_rank
     torch.cuda.set_device(local_rank)
-    sp_size = config.inference.get("sp_size", 1)
+    sp_size = config.get("sp_size", 1)
     assert sp_size <= world_size and world_size % sp_size == 0, "sp_size must be less than or equal to world_size and world_size must be divisible by sp_size."
 
     _init_logging(global_rank)
@@ -56,18 +56,18 @@ def main(config, args):
     target_dtype = torch.bfloat16
 
     # validate inputs before loading model to not waste time if input is not valid
-    text_prompt = config.inference.get("text_prompt")
-    image_path = config.inference.get("image_path", None)
+    text_prompt = config.get("text_prompt")
+    image_path = config.get("image_path", None)
     text_prompts, image_paths = validate_and_process_user_prompt(text_prompt, image_path)
-    if config.inference.get("t2v_only", False):
+    if config.get("t2v_only", False):
         image_paths = [None] * len(text_prompts)
 
     logging.info("Loading OVI Fusion Engine...")
     ovi_engine = OviFusionEngine(config=config, device=device, target_dtype=target_dtype)
     logging.info("OVI Fusion Engine loaded!!")
 
-    shard_text_model = config.inference.get("shard_text_model", False)
-    shard_fusion_model = config.inference.get("shard_fusion_model", False)
+    shard_text_model = config.get("shard_text_model", False)
+    shard_fusion_model = config.get("shard_fusion_model", False)
 
     #TODO: add sharding...
     if shard_text_model or shard_fusion_model:
@@ -76,7 +76,7 @@ def main(config, args):
     require_sample_padding = shard_text_model or shard_fusion_model
 
     
-    output_dir = config.inference.get("output_dir", "./outputs")
+    output_dir = config.get("output_dir", "./outputs")
     os.makedirs(output_dir, exist_ok=True)
 
     # Load CSV data
@@ -118,16 +118,16 @@ def main(config, args):
         this_rank_eval_data = all_eval_data[start_idx:end_idx]
 
     for idx, (text_prompt, image_path) in tqdm(enumerate(this_rank_eval_data)):
-        aspect_ratio = config.inference.get("aspect_ratio", "9:16")
-        seed = config.inference.get("seed", 100)
-        solver_name = config.inference.get("solver_name", "unipc")
-        sample_steps = config.inference.get("sample_steps", 50)
-        shift = config.inference.get("shift", 5.0)
-        video_guidance_scale = config.inference.get("video_guidance_scale", 5.0)
-        audio_guidance_scale = config.inference.get("audio_guidance_scale", 4.0)
-        slg_layer = config.inference.get("slg_layer", 9)
-        video_negative_prompt = config.inference.get("video_negative_prompt", "")
-        audio_negative_prompt = config.inference.get("audio_negative_prompt", "")
+        aspect_ratio = config.get("aspect_ratio", "9:16")
+        seed = config.get("seed", 100)
+        solver_name = config.get("solver_name", "unipc")
+        sample_steps = config.get("sample_steps", 50)
+        shift = config.get("shift", 5.0)
+        video_guidance_scale = config.get("video_guidance_scale", 5.0)
+        audio_guidance_scale = config.get("audio_guidance_scale", 4.0)
+        slg_layer = config.get("slg_layer", 9)
+        video_negative_prompt = config.get("video_negative_prompt", "")
+        audio_negative_prompt = config.get("audio_negative_prompt", "")
         generated_video, generated_audio = ovi_engine.generate(text_prompt=text_prompt,
                                                                 image_path=image_path,
                                                                 aspect_ratio=aspect_ratio,

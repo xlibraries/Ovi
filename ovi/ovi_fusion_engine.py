@@ -25,26 +25,33 @@ class OviFusionEngine:
         # Load fusion model
         self.device = device
         self.target_dtype = target_dtype
-        model, video_config, audio_config = init_fusion_score_model_ovi(rank=device)
-        model = model.to(dtype=target_dtype).to(device=device).eval()
+        meta_init = True
+
+        model, video_config, audio_config = init_fusion_score_model_ovi(rank=device, meta_init=meta_init)
+
+        if not meta_init:
+            model = model.to(dtype=target_dtype).to(device=device).eval()
     
         # Load VAEs
-        vae_model_video = init_wan_vae_2_2(config.video, rank=device)
+        vae_model_video = init_wan_vae_2_2(config.ckpt_dir, rank=device)
         vae_model_video.model.requires_grad_(False).eval()
         vae_model_video.model = vae_model_video.model.bfloat16()
         self.vae_model_video = vae_model_video
 
-        vae_model_audio = init_mmaudio_vae(config.audio, rank=device)
+        vae_model_audio = init_mmaudio_vae(config.ckpt_dir, rank=device)
         vae_model_audio.requires_grad_(False).eval()
         self.vae_model_audio = vae_model_audio.bfloat16()
 
         # Load T5 text model
-        self.text_model = init_text_model(config, rank=device)
-        if config.inference.get("shard_text_model", False):
+        self.text_model = init_text_model(config.ckpt_dir, rank=device)
+        if config.get("shard_text_model", False):
             raise NotImplementedError("Sharding text model is not implemented yet.")
 
         # Load checkpoint for fusion model
-        load_fusion_checkpoint(model, checkpoint_path=config.model.checkpoint_path)
+        load_fusion_checkpoint(model, checkpoint_path=config.model.checkpoint_path, from_meta=meta_init)
+        if meta_init:
+            model = model.to(dtype=target_dtype).to(device=device).eval()
+            model.set_rope_params()
         self.model = model
 
         # Fixed attributes, non-configurable
